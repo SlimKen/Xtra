@@ -629,15 +629,29 @@ class PlayerRepository(
         url to backupQualities
     }
 
-    suspend fun loadClipQualities(networkLibrary: String?, gqlHeaders: Map<String, String>, clipId: String?, enableIntegrity: Boolean): List<VideoQuality>? = withContext(Dispatchers.IO) {
+    suspend fun loadClipQualities(networkLibrary: String?, gqlHeaders: Map<String, String>, clipId: String?, supportedCodecs: String?, enableIntegrity: Boolean): List<VideoQuality>? = withContext(Dispatchers.IO) {
         try {
-            val response = graphQLRepository.loadClipUrls(networkLibrary, gqlHeaders, clipId)
+            val supportedCodecs = mutableListOf<String>().apply {
+                if (!supportedCodecs.isNullOrBlank()) {
+                    val list = supportedCodecs.split(',')
+                    if (list.find { it.equals("h264", true) } != null) {
+                        add("AVC")
+                    }
+                    if (list.find { it.equals("h265", true) } != null) {
+                        add("HEVC")
+                    }
+                    if (list.find { it.equals("av1", true) } != null) {
+                        add("AV1")
+                    }
+                }
+            }
+            val response = graphQLRepository.loadClipUrls(networkLibrary, gqlHeaders, clipId, supportedCodecs)
             if (enableIntegrity) {
                 response.errors?.find { it.message == C.FAILED_INTEGRITY_CHECK }?.let { throw Exception(it.message) }
             }
             val accessToken = response.data?.clip?.playbackAccessToken
             response.data!!.clip.assets.let { assets ->
-                (assets.find { it.portraitMetadata?.portraitClipLayout.isNullOrBlank() } ?: assets.firstOrNull())?.videoQualities?.mapIndexedNotNull { index, quality ->
+                (assets.maxByOrNull { it.aspectRatio ?: 0f } ?: assets.firstOrNull())?.videoQualities?.mapIndexedNotNull { index, quality ->
                     if (quality.sourceURL.isNotBlank()) {
                         val name = if (!quality.quality.isNullOrBlank()) {
                             val frameRate = quality.frameRate?.roundToInt() ?: ""
@@ -661,7 +675,7 @@ class PlayerRepository(
             }
             val accessToken = response.data?.clip?.playbackAccessToken
             response.data?.clip?.assets?.let { assets ->
-                (assets.find { it?.portraitMetadata?.portraitClipLayout.isNullOrBlank() } ?: assets.firstOrNull())?.videoQualities?.mapIndexedNotNull { index, quality ->
+                (assets.maxByOrNull { it?.aspectRatio ?: 0.0 } ?: assets.firstOrNull())?.videoQualities?.mapIndexedNotNull { index, quality ->
                     if (!quality?.sourceURL.isNullOrBlank()) {
                         val name = if (!quality.quality.isNullOrBlank()) {
                             val frameRate = quality.frameRate?.roundToInt() ?: ""

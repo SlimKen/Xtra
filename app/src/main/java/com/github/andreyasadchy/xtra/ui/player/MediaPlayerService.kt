@@ -827,17 +827,19 @@ class MediaPlayerService : BasePlaybackService() {
                         }
                     }
                     if (!playlist.isNullOrBlank()) {
-                        val stableVariantIds = Regex("STABLE-VARIANT-ID=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList().ifEmpty {
-                            Regex("NAME=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList()
+                        val stableVariantIds = Regex("STABLE-VARIANT-ID=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList().ifEmpty {
+                            Regex("NAME=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList()
                         }
-                        val resolutions = Regex("RESOLUTION=(\\d+x\\d+)").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList()
-                        val frameRates = Regex("FRAME-RATE=([\\d.]+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toFloatOrNull() }.toMutableList()
-                        val bitrates = Regex("BANDWIDTH=(\\d+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toIntOrNull() }.toMutableList()
-                        val codecs = Regex("CODECS=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList()
-                        val urls = Regex("https://.*\\.m3u8").findAll(playlist).map(MatchResult::value).toMutableList()
+                        val resolutions = Regex("RESOLUTION=(\\d+x\\d+)").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList()
+                        val frameRates = Regex("FRAME-RATE=([\\d.]+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toFloatOrNull() }.toList()
+                        val bitrates = Regex("BANDWIDTH=(\\d+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toIntOrNull() }.toList()
+                        val codecs = Regex("CODECS=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList()
+                        val urls = Regex("https://.*\\.m3u8").findAll(playlist).map(MatchResult::value).toList()
                         val list = stableVariantIds.mapIndexedNotNull { index, variantId ->
                             urls.getOrNull(index)?.let { url ->
-                                VideoQuality(variantId, resolutions.getOrNull(index)?.substringAfter('x')?.toIntOrNull(), frameRates.getOrNull(index), bitrates.getOrNull(index), codecs.getOrNull(index), url)
+                                if (!variantId.endsWith("-portrait")) {
+                                    VideoQuality(variantId, resolutions.getOrNull(index)?.substringAfter('x')?.toIntOrNull(), frameRates.getOrNull(index), bitrates.getOrNull(index), codecs.getOrNull(index), url)
+                                } else null
                             }
                         }
                         qualities = list
@@ -1081,18 +1083,25 @@ class MediaPlayerService : BasePlaybackService() {
                         }
                     }
                     if (!playlist.isNullOrBlank()) {
-                        val stableVariantIds = Regex("STABLE-VARIANT-ID=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList()
-                        val resolutions = Regex("RESOLUTION=(\\d+x\\d+)").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList()
-                        val frameRates = Regex("FRAME-RATE=([\\d.]+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toFloatOrNull() }.toMutableList()
-                        val bitrates = Regex("BANDWIDTH=(\\d+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toIntOrNull() }.toMutableList()
-                        val codecs = Regex("CODECS=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toMutableList()
-                        val urls = Regex("https://.*\\.m3u8").findAll(playlist).map(MatchResult::value).toMutableList()
-                        playlist.lines().filter { it.startsWith("#EXT-X-SESSION-DATA") }.let { list ->
-                            if (list.isNotEmpty()) {
+                        val stableVariantIds = Regex("STABLE-VARIANT-ID=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList()
+                        val resolutions = Regex("RESOLUTION=(\\d+x\\d+)").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList()
+                        val frameRates = Regex("FRAME-RATE=([\\d.]+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toFloatOrNull() }.toList()
+                        val bitrates = Regex("BANDWIDTH=(\\d+)\\b").findAll(playlist).mapNotNull { it.groups[1]?.value?.toIntOrNull() }.toList()
+                        val codecs = Regex("CODECS=\"(.+?)\"").findAll(playlist).mapNotNull { it.groups[1]?.value }.toList()
+                        val urls = Regex("https://.*\\.m3u8").findAll(playlist).map(MatchResult::value).toList()
+                        val list = stableVariantIds.mapIndexedNotNull { index, variantId ->
+                            urls.getOrNull(index)?.let { url ->
+                                if (!variantId.endsWith("-portrait")) {
+                                    VideoQuality(variantId, resolutions.getOrNull(index)?.substringAfter('x')?.toIntOrNull(), frameRates.getOrNull(index), bitrates.getOrNull(index), codecs.getOrNull(index), url)
+                                } else null
+                            }
+                        }.toMutableList()
+                        playlist.lines().filter { it.startsWith("#EXT-X-SESSION-DATA") }.let { lines ->
+                            if (lines.isNotEmpty()) {
                                 val url = urls.firstOrNull()?.takeIf { it.contains("/index-") }
                                 val variantId = stableVariantIds.firstOrNull()
                                 if (url != null && variantId != null) {
-                                    list.forEach { line ->
+                                    lines.forEach { line ->
                                         val id = Regex("DATA-ID=\"(.+?)\"").find(line)?.groups?.get(1)?.value
                                         if (id == "com.amazon.ivs.unavailable-media") {
                                             val value = Regex("VALUE=\"(.+?)\"").find(line)?.groups?.get(1)?.value
@@ -1118,7 +1127,9 @@ class MediaPlayerService : BasePlaybackService() {
                                                                 if (filterReasons != null) {
                                                                     for (filterIndex in 0 until filterReasons.length()) {
                                                                         val filter = filterReasons.optString(filterIndex)
-                                                                        if (filter == "FR_CODEC_NOT_REQUESTED") {
+                                                                        if (filter == "FR_CODEC_NOT_REQUESTED"
+                                                                            || filter == "FR_DUALFORMAT_INCOMPATIBLE" // portrait
+                                                                        ) {
                                                                             skip = true
                                                                             break
                                                                         }
@@ -1130,28 +1141,24 @@ class MediaPlayerService : BasePlaybackService() {
                                                                     val frameRate = obj.optString("FRAME-RATE").toFloatOrNull()
                                                                     val bitrate = obj.optInt("BANDWIDTH")
                                                                     val codec = obj.optString("CODECS")
-                                                                    if (!newVariantId.isNullOrBlank()) {
-                                                                        stableVariantIds.add(newVariantId)
-                                                                        if (!resolution.isNullOrBlank()) {
-                                                                            resolutions.add(resolution)
-                                                                        }
-                                                                        if (frameRate != null && frameRate > 0) {
-                                                                            frameRates.add(frameRate)
-                                                                        }
-                                                                        if (bitrate > 0) {
-                                                                            bitrates.add(bitrate)
-                                                                        }
-                                                                        if (!codec.isNullOrBlank()) {
-                                                                            codecs.add(codec)
-                                                                        }
-                                                                        urls.add(url.replace(
-                                                                            "$variantId/index-",
-                                                                            if (urls.find { it.contains("chunked/index-") } == null && newVariantId != "audio_only") {
-                                                                                "chunked/index-"
-                                                                            } else {
-                                                                                "$newVariantId/index-"
-                                                                            }
-                                                                        ))
+                                                                    if (!newVariantId.isNullOrBlank() && !newVariantId.endsWith("-portrait")) {
+                                                                        list.add(
+                                                                            VideoQuality(
+                                                                                name = newVariantId,
+                                                                                resolution = resolution.takeIf { !it.isNullOrBlank() }?.substringAfter('x')?.toIntOrNull(),
+                                                                                frameRate = frameRate.takeIf { it != null && it > 0 },
+                                                                                bitrate = bitrate.takeIf { it > 0 },
+                                                                                codecs = codec.takeIf { !it.isNullOrBlank() },
+                                                                                url = url.replace(
+                                                                                    "$variantId/index-",
+                                                                                    if (list.find { it.url?.contains("chunked/index-") == true } == null && newVariantId != "audio_only") {
+                                                                                        "chunked/index-"
+                                                                                    } else {
+                                                                                        "$newVariantId/index-"
+                                                                                    }
+                                                                                )
+                                                                            )
+                                                                        )
                                                                     }
                                                                 }
                                                             }
@@ -1162,11 +1169,6 @@ class MediaPlayerService : BasePlaybackService() {
                                         }
                                     }
                                 }
-                            }
-                        }
-                        val list = stableVariantIds.mapIndexedNotNull { index, newVariantId ->
-                            urls.getOrNull(index)?.let { url ->
-                                VideoQuality(newVariantId, resolutions.getOrNull(index)?.substringAfter('x')?.toIntOrNull(), frameRates.getOrNull(index), bitrates.getOrNull(index), codecs.getOrNull(index), url)
                             }
                         }
                         qualities = list
@@ -1293,6 +1295,7 @@ class MediaPlayerService : BasePlaybackService() {
                         networkLibrary = networkLibrary,
                         gqlHeaders = TwitchApiHelper.getGQLHeaders(this@MediaPlayerService),
                         clipId = clipId,
+                        supportedCodecs = prefs().getString(C.TOKEN_SUPPORTED_CODECS, "av1,h265,h264"),
                         enableIntegrity = prefs().getBoolean(C.ENABLE_INTEGRITY, false)
                     )
                 } catch (e: Exception) {
